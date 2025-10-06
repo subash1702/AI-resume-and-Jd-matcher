@@ -4,55 +4,99 @@ from sentence_transformers import SentenceTransformer
 from PyPDF2 import PdfReader
 from docx import Document
 
-st.set_page_config(page_title="MatchMyResume — AI JD Matcher", page_icon="✨", layout="wide")
+# ---------------- Page config ----------------
+st.set_page_config(page_title="MatchMyResume — AI JD Matcher", page_icon="✍️", layout="wide")
 
-# ---------- CSS ----------
+# Optional: set TITLE_URL from Secrets; user can override in sidebar
+DEFAULT_TITLE_URL = st.secrets.get("TITLE_URL", "https://github.com/yourname/yourrepo")
+
+# ---------------- Fonts & CSS ----------------
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-.block-container{max-width:1100px;padding-top:1rem;padding-bottom:2rem;}
-.brand-row{display:flex;align-items:center;gap:14px;}
-.brand-logo{width:40px;height:40px;border-radius:12px;
-  background:linear-gradient(135deg,#7C3AED,#8B5CF6 50%,#22C55E);
-  box-shadow:0 8px 22px rgba(124,58,237,.28);}
-.brand-title{font-size:28px;font-weight:800;letter-spacing:.2px;white-space:nowrap;}
-.brand-tag{display:inline-block;padding:.22rem .6rem;margin-left:.5rem;border-radius:999px;
-  font-size:.78rem;color:#fff;background:rgba(124,58,237,.25);border:1px solid rgba(124,58,237,.38)}
-.hero{background:radial-gradient(80rem 50rem at 10% -10%,rgba(124,58,237,.25),transparent 60%),
-             radial-gradient(80rem 50rem at 110% 10%,rgba(34,197,94,.18),transparent 60%);
-       border:1px solid rgba(255,255,255,.06);background:#0F172A;padding:16px 18px;border-radius:18px;}
-.hero-sub{margin:.35rem 0 0 0;color:#CBD5E1;}
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;700&family=Inter:wght@400;600;800&display=swap');
+
+:root{
+  --violet:#7C3AED;
+  --violet2:#8B5CF6;
+  --emerald:#22C55E;
+  --bg:#0B1220;
+  --panel:#0F172A;
+  --muted:#94A3B8;
+}
+
+html, body, [class*="css"] { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+.block-container{max-width:1080px;padding-top:1rem;padding-bottom:2rem;}
+
+/* HERO */
+.hero{position:relative;background:#0F172A;border:1px solid rgba(255,255,255,.06);
+      border-radius:20px;padding:18px 18px 16px 18px;
+      box-shadow: 0 10px 26px rgba(0,0,0,.25);
+      overflow:hidden;}
+.hero:before{
+  content:'';position:absolute;inset:-40% -30% auto auto;height:340px;width:340px;
+  background:radial-gradient(closest-side, rgba(124,58,237,.28), transparent 70%);
+  filter: blur(2px);
+}
+.hero:after{
+  content:'';position:absolute;inset:auto auto -35% -30%;height:320px;width:320px;
+  background:radial-gradient(closest-side, rgba(34,197,94,.22), transparent 70%);
+  filter: blur(2px);
+}
+
+/* Brand row */
+.brand{display:flex;align-items:center;gap:14px;z-index:2;position:relative;}
+.brand-badge{width:44px;height:44px;border-radius:12px;
+  background:linear-gradient(135deg,var(--violet),var(--violet2) 55%,var(--emerald));
+  box-shadow:0 10px 26px rgba(124,58,237,.35);}
+
+/* TYPEWRITER TITLE */
+.brand-title{font-family:'IBM Plex Mono', monospace; font-weight:700; letter-spacing: .5px;
+  font-size: clamp(30px, 4.2vw, 40px); color:#F8FAFC; line-height:1.06; margin:0; white-space:nowrap;}
+.brand-sub{margin:.25rem 0 0 0; color:#E2E8F0;}
+
+/* Small pill */
+.pill{display:inline-block;margin-top:6px;padding:.22rem .6rem;border-radius:999px;
+  font-size:.78rem;color:#fff;background:rgba(124,58,237,.28);border:1px solid rgba(124,58,237,.38)}
+
+/* Cards & KPI */
 .card{background:rgba(148,163,184,.08);border:1px solid rgba(255,255,255,.08);
       border-radius:16px;padding:1rem 1.25rem;}
-.kpi-big{font-size:1.25rem;font-weight:700;}
+.kpi-big{font-size:1.3rem;font-weight:800;}
 .progress-outer{height:10px;background:rgba(100,116,139,.35);border-radius:8px;overflow:hidden;}
-.progress-inner{height:10px;background:linear-gradient(90deg,#7C3AED,#8B5CF6,#22C55E);width:0%;}
+.progress-inner{height:10px;background:linear-gradient(90deg,var(--violet),var(--violet2),var(--emerald));width:0%;}
+
+/* Inputs */
 .chips span{display:inline-block;margin:.22rem .28rem;padding:.28rem .65rem;border-radius:999px;
   border:1px solid rgba(148,163,184,.4);background:#1F2937;color:#e2e8f0;font-size:.85rem;}
-.stButton>button{background:linear-gradient(90deg,#7C3AED,#8B5CF6,#22C55E);
-  color:#fff;border:none;border-radius:12px;padding:.7rem 1.1rem;font-weight:700}
-.stButton>button:hover{filter:brightness(1.05);}
-.footer{color:#94A3B8;font-size:.92rem;margin-top:2rem;}
+
+/* Buttons */
+.stButton>button{background:linear-gradient(90deg,var(--violet),var(--violet2),var(--emerald));
+  color:#fff;border:none;border-radius:12px;padding:.7rem 1.1rem;font-weight:800;}
+.stButton>button:hover{filter:brightness(1.06);}
+
+/* Footer */
+.footer{color:var(--muted);font-size:.92rem;margin-top:2rem;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- Header ----------
-st.markdown("""
-<div class="hero">
-  <div class="brand-row">
-    <div class="brand-logo"></div>
-    <div>
-      <div class="brand-title">MatchMyResume</div>
-      <div class="brand-tag">AI Resume ↔ JD Matcher</div>
+# ---------------- Header (clickable title) ----------------
+def hero(title_url: str):
+    st.markdown(f"""
+    <div class="hero">
+      <div class="brand">
+        <div class="brand-badge"></div>
+        <div>
+          <a href="{title_url}" target="_blank" style="text-decoration:none;">
+            <div class="brand-title">MatchMyResume</div>
+          </a>
+          <div class="brand-sub">AI Resume ↔ JD Matcher · Sentence-BERT embeddings</div>
+          <div class="pill">Type, paste or upload · Get fit score + evidence · Spot missing skills</div>
+        </div>
+      </div>
     </div>
-  </div>
-  <p class="hero-sub">Compare any resume with any job description using <b>Sentence-BERT</b> embeddings. 
-  Get a <b>semantic fit score</b>, see <b>evidence pairs</b>, and fix <b>missing skills</b>.</p>
-</div>
-""", unsafe_allow_html=True)
-st.write("")
+    """, unsafe_allow_html=True)
 
-# ---------- Helpers ----------
+# ---------------- Helpers ----------------
 @st.cache_resource(show_spinner=True)
 def load_model():
     return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
@@ -73,9 +117,10 @@ def read_any(uploaded_file)->str:
         return "\n".join([p.text for p in doc.paragraphs])
     return data.decode("utf-8", errors="ignore")
 
-# ---------- Sidebar ----------
+# ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("⚙️ Controls")
+    title_url = st.text_input("Title link (optional)", value=DEFAULT_TITLE_URL, help="Users can click the big title to open this link.")
     role_presets = {
         "Data Analyst":"python, sql, tableau, power bi, excel, pandas, scikit-learn, statistics, dashboard, etl, data cleaning",
         "Business Analyst":"requirements gathering, user stories, sql, excel, stakeholder management, process mapping, a/b testing",
@@ -105,8 +150,11 @@ with st.sidebar:
         value=", ".join([x for x in [role_presets[role], domain_presets[domain]] if x]), height=110)
     top_k = st.slider("Top evidence pairs", 3, 20, 10)
 
-# ---------- Unified Inputs (upload + paste both available) ----------
-st.subheader("📝 Provide Resume and Job Description (paste or upload for each)")
+# Render hero after reading sidebar link
+hero(title_url)
+
+# ---------------- Unified Inputs ----------------
+st.subheader("Input (paste takes priority over upload)")
 
 def get_text_source(title, upload_help, up_key, ta_key):
     c1, c2 = st.columns(2)
@@ -124,14 +172,12 @@ resume_text = get_text_source("Resume", "Upload resume (.pdf/.docx/.txt)", "resu
 jd_text = get_text_source("Job Description", "Upload JD (.pdf/.docx/.txt)", "jd_up", "jd_ta")
 
 if st.checkbox("Fill demo samples (if empty)", value=False):
-    if not resume_text:
-        resume_text = "Data Analyst with Python, SQL, Tableau experience."
-    if not jd_text:
-        jd_text = "Looking for a Data Analyst skilled in Python, SQL, Tableau, Power BI."
+    if not resume_text: resume_text = "Data Analyst with Python, SQL, Tableau, and Power BI; ML with scikit-learn."
+    if not jd_text: jd_text = "Looking for a Data Analyst skilled in Python, SQL, Tableau/Power BI; ETL experience preferred."
 
 go = st.button("🚀 Check Match", use_container_width=True)
 
-# ---------- Inference ----------
+# ---------------- Inference ----------------
 if go:
     if not resume_text or not jd_text:
         st.error("Please provide both Resume and Job Description (paste or upload for each).")
@@ -200,4 +246,4 @@ if go:
         st.text_area("Resume",r_txt,height=200)
         st.text_area("Job Description",j_txt,height=200)
 
-st.markdown('<div class="footer">Made with ✨ Streamlit + Sentence-BERT · Font: Inter · Violet/Emerald theme</div>',unsafe_allow_html=True)
+st.markdown('<div class="footer">Made with ✍️ Streamlit + Sentence-BERT · Title uses IBM Plex Mono (typewriter style). Click the title to open your link.</div>',unsafe_allow_html=True)

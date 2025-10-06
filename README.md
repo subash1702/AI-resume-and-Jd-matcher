@@ -1,4 +1,5 @@
-# MatchMyResume — Unified Paste/Upload Version
-
-Users can either paste text or upload files for each side (Resume & JD).  
-The app will automatically prioritize pasted text. Includes updated UI with clean layout and violet/emerald theme.
+# MatchMyResume — Typewriter Title Edition
+- Big **typewriter-style title** (IBM Plex Mono), highly visible
+- Title is **clickable**; set the URL via sidebar field or `TITLE_URL` in Streamlit Secrets
+- Unified **paste + upload** inputs for both Resume and JD
+- Modern violet/emerald dark theme and compact layout
