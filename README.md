@@ -1,6 +1,7 @@
-# MatchMyResume — Polished Edition
-- Courier Prime typewriter **animated** title
-- Unified paste + upload inputs (paste priority)
-- Auto JD keyword extraction (1–2 grams)
-- Better spacing, accessibility focus outlines
-- TXT/CSV/JSON downloads; reset button
+# MatchMyResume — With Resume Coach & ATS
+- Courier typewriter title, modern violet/emerald theme
+- Paste + upload inputs (paste wins)
+- Overall semantic fit (Sentence-BERT) + top evidence pairs
+- **ATS score (0–100)** with breakdown (coverage, structure, impact, formatting)
+- **Resume Coach (chat)**: suggestions & edits. Uses OpenAI if OPENAI_API_KEY is set; otherwise heuristic.
+- Downloads: CSV (evidence+keywords) & JSON report
