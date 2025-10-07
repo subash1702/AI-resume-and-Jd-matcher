@@ -1,5 +1,5 @@
 \
-import io, re, regex, json, numpy as np, pandas as pd
+import io, re, regex, json, numpy as np, pandas as pd, random
 import streamlit as st
 from sentence_transformers import SentenceTransformer
 from PyPDF2 import PdfReader
@@ -135,7 +135,7 @@ def get_text_source(title, upload_help, up_key, ta_key):
 resume_text = get_text_source("Resume", "Upload resume (.pdf/.docx/.txt)", "resume_up", "resume_ta")
 jd_text = get_text_source("Job Description", "Upload JD (.pdf/.docx/.txt)", "jd_up", "jd_ta")
 
-# Initialize persistent results container
+# Persistent results container
 if "results" not in st.session_state:
     st.session_state["results"] = None
 
@@ -145,8 +145,9 @@ if st.checkbox("Fill demo samples (if empty)", value=False):
 
 go = st.button("🚀 Check Match", use_container_width=True)
 
-# ---------- ATS + coach utilities ----------
-ACTION_VERBS = ["delivered","built","designed","launched","led","owned","scaled","automated","optimized","migrated","deployed","improved","reduced","increased","analyzed","developed"]
+# ---------- ATS + utility ----------
+ACTION_VERBS = ["delivered","built","designed","launched","led","owned","scaled","automated","optimized",
+                "migrated","deployed","improved","reduced","increased","analyzed","developed"]
 SECTIONS = ["summary","experience","work experience","projects","education","skills","certifications","achievements"]
 
 def ats_score(resume, jd, kw_list):
@@ -171,15 +172,70 @@ def ats_score(resume, jd, kw_list):
     breakdown = {"coverage": coverage, "structure": structure, "impact": impact, "formatting": formatting}
     return total, breakdown, have, [k for k in jd_kw if k not in have]
 
-def heuristic_coach(user_msg, resume, jd, have, miss, breakdown):
+# ---------- Intent-aware coach helpers ----------
+def detect_intent(msg: str) -> str:
+    m = msg.lower()
+    if any(k in m for k in ["rewrite", "improve", "polish", "make this better", "rephrase"]): return "rewrite"
+    if any(k in m for k in ["bullet", "point", "line:", "- ", "• "]): return "rewrite"
+    if any(k in m for k in ["summary", "objective", "profile"]): return "summary"
+    if any(k in m for k in ["skills", "keywords", "ats", "score", "missing"]): return "ats"
+    if any(k in m for k in ["projects", "experience", "education", "format", "layout"]): return "structure"
+    return "general"
+
+def improve_bullet(b: str) -> str:
+    text = re.sub(r"^[\-\•\*]\s*", "", b).strip()
+    if not text:
+        return "• Led X to achieve Y by doing Z (↑result % / ↓time / $saved)."
+    if not re.match(r"^[A-Za-z]+\b", text):
+        text = "Delivered " + text
+    else:
+        first = text.split()[0].lower()
+        if first not in ACTION_VERBS:
+            text = "Improved " + text[0].lower() + text[1:]
+    if not re.search(r"\b\d", text):
+        text += " — resulting in ↑(metric) by %(value) or saving (time/$)."
+    return "• " + text
+
+def extract_bullets(resume_text: str, k: int = 5):
+    bs = re.findall(r"^[\-\•\*]\s?.+$", resume_text, flags=re.M)
+    return bs[:k] if bs else []
+
+def prioritized_changes(missing, breakdown):
     tips = []
-    if miss: tips.append(f"Add relevant keywords naturally: **{', '.join(sorted(set(miss))[:10])}**.")
-    if breakdown["impact"] < 14: tips.append("Strengthen bullets with **action verbs** + **numbers** (e.g., *reduced latency by 30%*).")
-    if breakdown["structure"] < 20: tips.append("Ensure clear sections: **Summary, Skills, Experience, Projects, Education, Certifications**.")
-    if breakdown["formatting"] < 12: tips.append("Use concise bullets (8–16 words), consistent tense, avoid giant paragraphs.")
-    if 'intern' in jd.lower() and 'intern' not in resume.lower(): tips.append("Include **internship/project** experience with measurable outcomes.")
-    if not tips: tips = ["Looking solid. Add a one-line **impact summary** at the top and tailor 3–5 bullets to the JD."]
-    return "**Suggestions:**\n- " + "\n- ".join(tips) + "\n\n**What to try next:** Paste a bullet you're unsure about; I'll make it punchier."
+    if missing: tips.append("Add missing keywords: " + ", ".join(sorted(set(missing))[:10]))
+    if breakdown["impact"] < 14: tips.append("Rewrite 3 bullets with **action verb + number** (e.g., reduced processing time by 28%).")
+    if breakdown["structure"] < 20: tips.append("Ensure sections: **Summary, Skills, Experience, Projects, Education, Certifications**.")
+    if breakdown["formatting"] < 12: tips.append("Keep bullets 8–16 words; avoid long paragraphs; consistent tense.")
+    return tips or ["Looks solid—tailor 2–3 bullets to the JD’s top requirements."]
+
+def heuristic_reply(user_msg, resume_text, jd_text, have, miss, breakdown):
+    random.seed(hash(user_msg) % 10_000)
+    intent = detect_intent(user_msg)
+    if intent in ("rewrite","summary"):
+        m = re.search(r"(?s)(?:-|\*|•)?\s*(.+)$", user_msg.strip())
+        candidate = m.group(1).strip() if m else ""
+        if len(candidate.split()) < 3:
+            bs = extract_bullets(resume_text, k=1)
+            candidate = bs[0] if bs else ""
+        improved = improve_bullet(candidate)
+        return (f"**Rewrite suggestion**\n\n"
+                f"Original:\n- {candidate or '(no bullet detected)'}\n\n"
+                f"Better:\n{improved}\n\n"
+                f"Tips: Use an action verb, add a metric (%, time, $), and tie to a business outcome.")
+    if intent == "ats":
+        tips = prioritized_changes(miss, breakdown); random.shuffle(tips)
+        return f"**ATS Focus**\n- " + "\n- ".join(tips) + f"\n\nMissing keywords snapshot: {', '.join(sorted(set(miss))[:12]) or '—'}"
+    if intent == "structure":
+        return ("**Structure recommendations**\n"
+                "1. Summary (2–3 lines with role + impact)\n"
+                "2. Skills (grouped: Languages | Tools | Platforms)\n"
+                "3. Experience (reverse-chronological, 3–5 bullets each)\n"
+                "4. Projects (2–3, with metrics)\n"
+                "5. Education, Certifications\n\n"
+                "Use consistent formatting and quantify outcomes in bullets.")
+    tips = prioritized_changes(miss, breakdown); random.shuffle(tips)
+    sample = improve_bullet('built dashboards for management')
+    return "**Top changes to make now**\n- " + "\n- ".join(tips) + f"\n\n**Example bullet pattern:**\n{sample}"
 
 # ---------- Compute on click, store results ----------
 if go:
@@ -228,7 +284,6 @@ if go:
 
     ats, breakdown, have_jd, miss_jd = ats_score(r_txt, j_txt, kw_list)
 
-    # save to session_state
     st.session_state["results"] = {
         "overall": float(overall),
         "ats": int(ats),
@@ -245,7 +300,6 @@ if go:
 
 # ---------- Render results if present ----------
 data = st.session_state.get("results")
-
 if data:
     overall   = data["overall"]
     ats       = data["ats"]
@@ -259,7 +313,6 @@ if data:
     domain    = data["domain"]
     kw_list   = data["kw_list"]
 
-    # KPI row
     k1, k2, k3 = st.columns([1, 1, 2])
     with k1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -381,7 +434,7 @@ if data:
                 except Exception:
                     reply = None
             if not reply:
-                reply = heuristic_coach(user_msg, r_txt, j_txt, have, miss, breakdown)
+                reply = heuristic_reply(user_msg, r_txt, j_txt, have, miss, breakdown)
             st.session_state.chat.append(("assistant", reply))
             with st.chat_message("assistant"):
                 st.write(reply)
