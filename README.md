@@ -1,5 +1,6 @@
-# MatchMyResume — Typewriter Title Edition
-- Big **typewriter-style title** (IBM Plex Mono), highly visible
-- Title is **clickable**; set the URL via sidebar field or `TITLE_URL` in Streamlit Secrets
-- Unified **paste + upload** inputs for both Resume and JD
-- Modern violet/emerald dark theme and compact layout
+# MatchMyResume — Polished Edition
+- Courier Prime typewriter **animated** title
+- Unified paste + upload inputs (paste priority)
+- Auto JD keyword extraction (1–2 grams)
+- Better spacing, accessibility focus outlines
+- TXT/CSV/JSON downloads; reset button
