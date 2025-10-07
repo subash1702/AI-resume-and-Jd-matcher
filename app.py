@@ -1,5 +1,5 @@
-\
-import io, re, regex, json, numpy as np, pandas as pd, random
+
+import io, re, regex, json, random, numpy as np, pandas as pd
 import streamlit as st
 from sentence_transformers import SentenceTransformer
 from PyPDF2 import PdfReader
@@ -7,7 +7,7 @@ from docx import Document
 
 st.set_page_config(page_title="MatchMyResume — AI JD Matcher + Coach", page_icon="🤖", layout="wide")
 
-# ---------- CSS ----------
+# ========================= CSS =========================
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@700&family=Inter:wght@400;600;800&display=swap');
@@ -36,12 +36,14 @@ html, body, [class*="css"] { font-family: Inter, system-ui, -apple-system, Segoe
 .stButton>button{background:linear-gradient(90deg,var(--violet),var(--violet2),var(--emerald));
   color:#fff;border:none;border-radius:12px;padding:.7rem 1.1rem;font-weight:800;}
 .stButton>button:hover{filter:brightness(1.06);}
+.badge{display:inline-block;margin-left:.5rem;padding:.2rem .5rem;border-radius:999px;
+  background:#1f2937;border:1px solid rgba(148,163,184,.35);font-size:.8rem;color:#cbd5e1;}
 .footer{color:var(--muted);font-size:.92rem;margin-top:2rem;text-align:center;}
 .footer a{color:#A5B4FC;text-decoration:none;} .footer a:hover{text-decoration:underline;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- Header ----------
+# ========================= Header =========================
 st.markdown("""
 <div class="hero" role="banner" aria-label="App header">
   <div class="brand">
@@ -55,23 +57,22 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ---------- Helpers ----------
+# ========================= Helpers =========================
 @st.cache_resource(show_spinner=True)
 def load_model():
     return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-def clean(t):
-    return regex.sub(r"\s+", " ", t.replace("\u00A0"," ").strip())
+def clean(t: str) -> str:
+    return regex.sub(r"\s+", " ", (t or "").replace("\u00A0"," ").strip())
 
-def split_sentences(t):
+def split_sentences(t: str):
     sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', t) if s.strip()]
     return sents[:600]
 
 def embed(m, texts):
     return m.encode(texts, normalize_embeddings=True)
 
-def cos_sim(a,b):
-    return float(np.dot(a,b))
+def cos_sim(a,b): return float(np.dot(a,b))
 
 def read_any(uploaded_file) -> str:
     name = uploaded_file.name.lower()
@@ -84,7 +85,14 @@ def read_any(uploaded_file) -> str:
         return "\n".join(p.text for p in doc.paragraphs)
     return data.decode("utf-8", errors="ignore")
 
-# ---------- Sidebar ----------
+def secrets_has_openai():
+    try:
+        k = st.secrets.get("OPENAI_API_KEY", None)
+        return bool(k and isinstance(k, str) and k.startswith(("sk-", "sk-proj-")))
+    except Exception:
+        return False
+
+# ========================= Sidebar =========================
 with st.sidebar:
     st.header("⚙️ Controls")
     role_presets = {
@@ -117,7 +125,7 @@ with st.sidebar:
     auto_kw = st.checkbox("Auto-extract top JD terms (adds 1–2 grams)", value=True)
     top_k = st.slider("Top evidence pairs", 3, 20, 10)
 
-# ---------- Inputs ----------
+# ========================= Inputs =========================
 st.subheader("Input (paste takes priority over upload)")
 
 def get_text_source(title, upload_help, up_key, ta_key):
@@ -135,24 +143,26 @@ def get_text_source(title, upload_help, up_key, ta_key):
 resume_text = get_text_source("Resume", "Upload resume (.pdf/.docx/.txt)", "resume_up", "resume_ta")
 jd_text = get_text_source("Job Description", "Upload JD (.pdf/.docx/.txt)", "jd_up", "jd_ta")
 
-# Persistent results container
-if "results" not in st.session_state:
-    st.session_state["results"] = None
+# persistent store
+if "results" not in st.session_state: st.session_state["results"] = None
+if "chat" not in st.session_state or not isinstance(st.session_state["chat"], list): st.session_state["chat"] = []
 
+# Demo filler
 if st.checkbox("Fill demo samples (if empty)", value=False):
     if not resume_text: resume_text = "Data Analyst with Python, SQL, Tableau, and Power BI; ML with scikit-learn. Built ETL with Airflow; AWS experience."
     if not jd_text: jd_text = "Hiring a Data Analyst with Python, SQL, Tableau/Power BI; ETL (Airflow/DBT), Docker, Git; AWS/Azure a plus."
 
 go = st.button("🚀 Check Match", use_container_width=True)
 
-# ---------- ATS + utility ----------
-ACTION_VERBS = ["delivered","built","designed","launched","led","owned","scaled","automated","optimized",
-                "migrated","deployed","improved","reduced","increased","analyzed","developed"]
+# GPT connection badge
+st.write(f"**Mode:** {'GPT Connected ✅' if secrets_has_openai() else 'Offline Heuristic ⛔'}")
+
+# ========================= ATS + utilities =========================
+ACTION_VERBS = ["delivered","built","designed","launched","led","owned","scaled","automated","optimized","migrated","deployed","improved","reduced","increased","analyzed","developed"]
 SECTIONS = ["summary","experience","work experience","projects","education","skills","certifications","achievements"]
 
 def ats_score(resume, jd, kw_list):
-    resume_l = resume.lower()
-    jd_l = jd.lower()
+    resume_l = resume.lower(); jd_l = jd.lower()
     jd_kw = [k for k in kw_list if k in jd_l]
     have = [k for k in jd_kw if k in resume_l]
     coverage = 0 if not jd_kw else int(40 * len(have) / max(1, len(jd_kw)))
@@ -172,10 +182,10 @@ def ats_score(resume, jd, kw_list):
     breakdown = {"coverage": coverage, "structure": structure, "impact": impact, "formatting": formatting}
     return total, breakdown, have, [k for k in jd_kw if k not in have]
 
-# ---------- Intent-aware coach helpers ----------
+# ========================= Intent-aware coach helpers =========================
 def detect_intent(msg: str) -> str:
     m = msg.lower()
-    if any(k in m for k in ["rewrite", "improve", "polish", "make this better", "rephrase"]): return "rewrite"
+    if any(k in m for k in ["rewrite", "improve", "polish", "rephrase", "make this better"]): return "rewrite"
     if any(k in m for k in ["bullet", "point", "line:", "- ", "• "]): return "rewrite"
     if any(k in m for k in ["summary", "objective", "profile"]): return "summary"
     if any(k in m for k in ["skills", "keywords", "ats", "score", "missing"]): return "ats"
@@ -183,9 +193,8 @@ def detect_intent(msg: str) -> str:
     return "general"
 
 def improve_bullet(b: str) -> str:
-    text = re.sub(r"^[\-\•\*]\s*", "", b).strip()
-    if not text:
-        return "• Led X to achieve Y by doing Z (↑result % / ↓time / $saved)."
+    text = re.sub(r"^[\-\•\*]\s*", "", b or "").strip()
+    if not text: return "• Led X to achieve Y by doing Z (↑result % / ↓time / $saved)."
     if not re.match(r"^[A-Za-z]+\b", text):
         text = "Delivered " + text
     else:
@@ -197,7 +206,7 @@ def improve_bullet(b: str) -> str:
     return "• " + text
 
 def extract_bullets(resume_text: str, k: int = 5):
-    bs = re.findall(r"^[\-\•\*]\s?.+$", resume_text, flags=re.M)
+    bs = re.findall(r"^[\-\•\*]\s?.+$", resume_text or "", flags=re.M)
     return bs[:k] if bs else []
 
 def prioritized_changes(missing, breakdown):
@@ -212,8 +221,8 @@ def heuristic_reply(user_msg, resume_text, jd_text, have, miss, breakdown):
     random.seed(hash(user_msg) % 10_000)
     intent = detect_intent(user_msg)
     if intent in ("rewrite","summary"):
-        m = re.search(r"(?s)(?:-|\*|•)?\s*(.+)$", user_msg.strip())
-        candidate = m.group(1).strip() if m else ""
+        m = re.search(r"(?s)(?:-|\*|•)?\s*(.+)$", (user_msg or "").strip())
+        candidate = (m.group(1).strip() if m else "")
         if len(candidate.split()) < 3:
             bs = extract_bullets(resume_text, k=1)
             candidate = bs[0] if bs else ""
@@ -237,7 +246,7 @@ def heuristic_reply(user_msg, resume_text, jd_text, have, miss, breakdown):
     sample = improve_bullet('built dashboards for management')
     return "**Top changes to make now**\n- " + "\n- ".join(tips) + f"\n\n**Example bullet pattern:**\n{sample}"
 
-# ---------- Compute on click, store results ----------
+# ========================= Compute on click, store results =========================
 if go:
     if not resume_text or not jd_text:
         st.error("Please provide both Resume and Job Description (paste or upload for each).")
@@ -256,33 +265,27 @@ if go:
         except Exception:
             pass
 
-    R, J = embed(model, [r_txt, j_txt])
-    overall = cos_sim(R, J)
+    R, J = embed(model, [r_txt, j_txt]); overall = cos_sim(R, J)
 
-    jd_sents = split_sentences(j_txt)
-    r_sents  = split_sentences(r_txt)
+    jd_sents = split_sentences(j_txt); r_sents = split_sentences(r_txt)
     if not jd_sents or not r_sents:
-        st.warning("One of the texts has no extractable sentences.")
-        st.stop()
+        st.warning("One of the texts has no extractable sentences."); st.stop()
 
-    E_jd = embed(model, jd_sents)
-    E_r  = embed(model, r_sents)
+    E_jd = embed(model, jd_sents); E_r = embed(model, r_sents)
     sims = np.matmul(E_jd, E_r.T)
 
     pairs = []
     for i, row in enumerate(sims):
-        j_best = int(np.argmax(row))
-        pairs.append((jd_sents[i], r_sents[j_best], float(row[j_best])))
+        j_best = int(np.argmax(row)); pairs.append((jd_sents[i], r_sents[j_best], float(row[j_best])))
     pairs = sorted(pairs, key=lambda x: -x[2])[:top_k]
     df = pd.DataFrame(pairs, columns=["JD Sentence", "Resume Sentence", "Similarity"])
 
     manual_kw = [k.strip().lower() for k in kw_text.split(",") if k.strip()]
     kw_list = sorted(set(manual_kw + auto_terms))
     r_low, j_low = r_txt.lower(), j_txt.lower()
-    have = [k for k in kw_list if k in r_low]
-    miss = [k for k in kw_list if (k in j_low and k not in r_low)]
+    have = [k for k in kw_list if k in r_low]; miss = [k for k in kw_list if (k in j_low and k not in r_low)]
 
-    ats, breakdown, have_jd, miss_jd = ats_score(r_txt, j_txt, kw_list)
+    ats, breakdown, _, _ = ats_score(r_txt, j_txt, kw_list)
 
     st.session_state["results"] = {
         "overall": float(overall),
@@ -298,33 +301,24 @@ if go:
         "kw_list": kw_list,
     }
 
-# ---------- Render results if present ----------
+# ========================= Render results if present =========================
 data = st.session_state.get("results")
 if data:
-    overall   = data["overall"]
-    ats       = data["ats"]
-    breakdown = data["breakdown"]
-    df        = data["df"]
-    have      = data["have"]
-    miss      = data["miss"]
-    r_txt     = data["r_txt"]
-    j_txt     = data["j_txt"]
-    role      = data["role"]
-    domain    = data["domain"]
-    kw_list   = data["kw_list"]
+    overall   = data["overall"]; ats = data["ats"]; breakdown = data["breakdown"]
+    df        = data["df"]; have = data["have"]; miss = data["miss"]
+    r_txt     = data["r_txt"]; j_txt = data["j_txt"]
+    role      = data["role"]; domain = data["domain"]; kw_list = data["kw_list"]
 
     k1, k2, k3 = st.columns([1, 1, 2])
     with k1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.caption("Overall Fit (cosine)")
-        st.markdown(f'<div class="kpi-big">{overall:.3f}</div>', unsafe_allow_html=True)
+        st.caption("Overall Fit (cosine)"); st.markdown(f'<div class="kpi-big">{overall:.3f}</div>', unsafe_allow_html=True)
         pct = max(min((overall - 0.5) / 0.5, 1), 0) * 100
         st.markdown(f'<div class="progress-outer"><div class="progress-inner" style="width:{pct:.0f}%"></div></div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     with k2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.caption("ATS Score (0–100)")
-        st.markdown(f'<div class="kpi-big">{ats}</div>', unsafe_allow_html=True)
+        st.caption("ATS Score (0–100)"); st.markdown(f'<div class="kpi-big">{ats}</div>', unsafe_allow_html=True)
         st.write(f"Coverage {breakdown['coverage']}, Structure {breakdown['structure']}, Impact {breakdown['impact']}, Formatting {breakdown['formatting']}")
         st.markdown('</div>', unsafe_allow_html=True)
     with k3:
@@ -342,22 +336,15 @@ if data:
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("Found in Resume")
-            if have:
-                st.markdown('<div class="chips">' + " ".join([f"<span>{h}</span>" for h in sorted(set(have))]) + "</div>", unsafe_allow_html=True)
-            else:
-                st.write("—")
+            st.markdown('<div class="chips">' + (" ".join([f"<span>{h}</span>" for h in sorted(set(have))]) or "—") + "</div>", unsafe_allow_html=True)
         with c2:
             st.subheader("Missing but in JD")
-            if miss:
-                st.markdown('<div class="chips">' + " ".join([f"<span>{m}</span>" for m in sorted(set(miss))]) + "</div>", unsafe_allow_html=True)
-            else:
-                st.write("—")
+            st.markdown('<div class="chips">' + (" ".join([f"<span>{m}</span>" for m in sorted(set(miss))]) or "—") + "</div>", unsafe_allow_html=True)
         st.text_area("Copy missing keywords", value=", ".join(sorted(set(miss))), height=80)
 
     with tab2:
         st.subheader("Top JD ↔ Resume Matches")
-        df_safe = df.copy()
-        df_safe["Similarity"] = df_safe["Similarity"].astype(float).round(3)
+        df_safe = df.copy(); df_safe["Similarity"] = df_safe["Similarity"].astype(float).round(3)
         def bucket(v):
             if v >= 0.85: return "🔥 Strong"
             if v >= 0.75: return "✅ Good"
@@ -377,10 +364,8 @@ if data:
 
     with tab4:
         st.subheader("Download results")
-        out = df.copy()
-        out["Similarity"] = out["Similarity"].astype(float).round(3)
-        out["Have Keywords"] = ", ".join(sorted(set(have)))
-        out["Missing Keywords"] = ", ".join(sorted(set(miss)))
+        out = df.copy(); out["Similarity"] = out["Similarity"].astype(float).round(3)
+        out["Have Keywords"] = ", ".join(sorted(set(have))); out["Missing Keywords"] = ", ".join(sorted(set(miss)))
         csv_bytes = out.to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Download CSV", csv_bytes, file_name="match_results.csv", mime="text/csv")
         evidence_records = [{"jd": str(r["JD Sentence"]), "resume": str(r["Resume Sentence"]), "sim": float(r["Similarity"])} for _, r in out.iterrows()]
@@ -393,51 +378,46 @@ if data:
     with tab5:
         st.subheader("Resume Coach")
         st.caption("Ask how to tailor your resume. Paste any bullet; I’ll make it stronger.")
-
-        if "chat" not in st.session_state or not isinstance(st.session_state["chat"], list):
-            st.session_state["chat"] = []
+        st.markdown(f'<span class="badge">{"GPT Connected ✅" if secrets_has_openai() else "Offline Heuristic ⛔"}</span>', unsafe_allow_html=True)
 
         context = {"profile": str(role), "domain": str(domain), "missing": sorted(set(map(str, miss))), "have": sorted(set(map(str, have))),
                    "ats": int(ats), "ats_breakdown": {k: int(v) for k, v in breakdown.items()}}
 
-        if len(st.session_state.chat) == 0:
+        if not any(r == "assistant" for r,_ in st.session_state.chat):
             st.session_state.chat.append(("assistant", f"Hi! I'm your resume coach. Your current ATS is **{ats}/100**. Ask me anything or paste a bullet for edits."))
 
         for role_, msg in st.session_state.chat:
-            with st.chat_message(role_):
-                st.write(msg)
+            with st.chat_message(role_): st.write(msg)
 
         user_msg = st.chat_input("Type your question or paste a bullet…")
         if user_msg:
             st.session_state.chat.append(("user", user_msg))
             reply = None
-            api_key = st.secrets.get("OPENAI_API_KEY", None)
-            if api_key:
+            if secrets_has_openai():
                 try:
                     import openai
-                    openai.api_key = api_key
-                    prompt = ("You are a resume coach. Improve bullets with numbers and action verbs; suggest keyword insertions. Keep answers concise with examples.\n"
-                              f"Context JSON: {json.dumps(context)}\nUser: {user_msg}\nAssistant:")
+                    openai.api_key = st.secrets["OPENAI_API_KEY"]
+                    prompt = ("You are a resume coach. Improve bullets with numbers and action verbs; suggest keyword insertions. "
+                              "Keep answers concise with examples.\n"
+                              f"Context JSON: {json.dumps(context)}\n"
+                              f"User: {user_msg}\nAssistant:")
                     try:
                         resp = openai.ChatCompletion.create(
                             model="gpt-3.5-turbo",
-                            messages=[{"role":"system","content":"Resume coach."},
-                                      {"role":"user","content": prompt}],
-                            max_tokens=300, temperature=0.4
+                            messages=[{"role": "system", "content": "Resume coach."},
+                                      {"role": "user", "content": prompt}],
+                            max_tokens=320, temperature=0.4
                         )
                         reply = resp.choices[0].message["content"].strip()
                     except Exception:
-                        resp = openai.Completion.create(
-                            model="text-davinci-003", prompt=prompt, max_tokens=300, temperature=0.4
-                        )
+                        resp = openai.Completion.create(model="text-davinci-003", prompt=prompt, max_tokens=320, temperature=0.4)
                         reply = resp.choices[0].text.strip()
                 except Exception:
                     reply = None
             if not reply:
                 reply = heuristic_reply(user_msg, r_txt, j_txt, have, miss, breakdown)
             st.session_state.chat.append(("assistant", reply))
-            with st.chat_message("assistant"):
-                st.write(reply)
+            with st.chat_message("assistant"): st.write(reply)
 
-# ---------- Footer ----------
+# ========================= Footer =========================
 st.markdown('<div class="footer">Built by <a href="https://github.com/subashchakravarthy" target="_blank">Subash Chakravarthy</a> · © 2025</div>', unsafe_allow_html=True)
