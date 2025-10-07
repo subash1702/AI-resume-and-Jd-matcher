@@ -6,14 +6,12 @@ from docx import Document
 
 st.set_page_config(page_title="MatchMyResume — AI JD Matcher + Coach", page_icon="🤖", layout="wide")
 
-# ---------------- CSS (polished + chat) ----------------
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@700&family=Inter:wght@400;600;800&display=swap');
 :root{--violet:#7C3AED;--violet2:#8B5CF6;--emerald:#22C55E;--panel:#0F172A;--muted:#94A3B8;}
 html, body, [class*="css"] { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
 .block-container{max-width:1120px;padding-top:1rem;padding-bottom:2rem;}
-/* HERO */
 .hero{position:relative;background:var(--panel);border:1px solid rgba(255,255,255,.06);
       border-radius:20px;padding:18px;border-left:3px solid var(--violet);
       box-shadow:0 10px 26px rgba(0,0,0,.25);overflow:hidden;}
@@ -26,31 +24,21 @@ html, body, [class*="css"] { font-family: Inter, system-ui, -apple-system, Segoe
 .brand-sub{margin:.25rem 0 0 0;color:#E2E8F0;}
 .pill{display:inline-block;margin-top:6px;padding:.22rem .6rem;border-radius:999px;
   font-size:.78rem;color:#fff;background:rgba(124,58,237,.28);border:1px solid rgba(124,58,237,.38)}
-/* Cards & KPI */
 .card{background:rgba(148,163,184,.08);border:1px solid rgba(255,255,255,.08);
       border-radius:16px;padding:1rem 1.25rem;}
 .kpi-big{font-size:1.3rem;font-weight:800;}
 .progress-outer{height:10px;background:rgba(100,116,139,.35);border-radius:8px;overflow:hidden;}
 .progress-inner{height:10px;background:linear-gradient(90deg,var(--violet),var(--violet2),var(--emerald));width:0%;}
-/* Chips */
 .chips span{display:inline-block;margin:.22rem .28rem;padding:.28rem .65rem;border-radius:999px;
   border:1px solid rgba(148,163,184,.4);background:#1F2937;color:#e2e8f0;font-size:.85rem;}
-/* Buttons */
 .stButton>button{background:linear-gradient(90deg,var(--violet),var(--violet2),var(--emerald));
   color:#fff;border:none;border-radius:12px;padding:.7rem 1.1rem;font-weight:800;}
 .stButton>button:hover{filter:brightness(1.06);}
-/* Chat */
-.chat-wrap{border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:10px;}
-.role{font-size:.85rem; opacity:.8}
-.assist{background:rgba(124,58,237,.14); border:1px solid rgba(124,58,237,.25)}
-.user{background:rgba(148,163,184,.12); border:1px solid rgba(148,163,184,.25)}
-/* Footer */
 .footer{color:var(--muted);font-size:.92rem;margin-top:2rem;text-align:center;}
 .footer a{color:#A5B4FC;text-decoration:none;} .footer a:hover{text-decoration:underline;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- Header ----------------
 st.markdown("""
 <div class="hero" role="banner" aria-label="App header">
   <div class="brand">
@@ -64,36 +52,34 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ---------------- Helpers ----------------
 @st.cache_resource(show_spinner=True)
 def load_model():
     return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-def clean(t): return regex.sub(r"\s+", " ", t.replace(" "," ").strip())
+def clean(t):
+    return regex.sub(r"\s+", " ", t.replace("\u00A0"," ").strip())
 
 def split_sentences(t):
     sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', t) if s.strip()]
     return sents[:600]
 
-def embed(m, texts): return m.encode(texts, normalize_embeddings=True)
-def cos_sim(a,b): return float(np.dot(a,b))
+def embed(m, texts):
+    return m.encode(texts, normalize_embeddings=True)
 
-def read_any(uploaded_file)->str:
+def cos_sim(a,b):
+    return float(np.dot(a,b))
+
+def read_any(uploaded_file) -> str:
     name = uploaded_file.name.lower()
     data = uploaded_file.read()
     if name.endswith(".pdf"):
         pdf = PdfReader(io.BytesIO(data))
-        texts = [p.extract_text() or "" for p in pdf.pages]
-        if sum(len(t) for t in texts) == 0:
-            st.info("This PDF seems scanned (no selectable text). Try DOCX/TXT or OCR.")
-        return " ".join(texts)
+        return " ".join((p.extract_text() or "") for p in pdf.pages)
     if name.endswith(".docx"):
         doc = Document(io.BytesIO(data))
-        return "
-".join([p.text for p in doc.paragraphs])
+        return "\n".join(p.text for p in doc.paragraphs)
     return data.decode("utf-8", errors="ignore")
 
-# ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("⚙️ Controls")
     role_presets = {
@@ -126,7 +112,6 @@ with st.sidebar:
     auto_kw = st.checkbox("Auto-extract top JD terms (adds 1–2 grams)", value=True)
     top_k = st.slider("Top evidence pairs", 3, 20, 10)
 
-# ---------------- Inputs ----------------
 st.subheader("Input (paste takes priority over upload)")
 
 def get_text_source(title, upload_help, up_key, ta_key):
@@ -144,71 +129,47 @@ def get_text_source(title, upload_help, up_key, ta_key):
 resume_text = get_text_source("Resume", "Upload resume (.pdf/.docx/.txt)", "resume_up", "resume_ta")
 jd_text = get_text_source("Job Description", "Upload JD (.pdf/.docx/.txt)", "jd_up", "jd_ta")
 
-# Demo fill
 if st.checkbox("Fill demo samples (if empty)", value=False):
     if not resume_text: resume_text = "Data Analyst with Python, SQL, Tableau, and Power BI; ML with scikit-learn. Built ETL with Airflow; AWS experience."
     if not jd_text: jd_text = "Hiring a Data Analyst with Python, SQL, Tableau/Power BI; ETL (Airflow/DBT), Docker, Git; AWS/Azure a plus."
 
 go = st.button("🚀 Check Match", use_container_width=True)
 
-# -------------- ATS + chat utilities --------------
 ACTION_VERBS = ["delivered","built","designed","launched","led","owned","scaled","automated","optimized","migrated","deployed","improved","reduced","increased","analyzed","developed"]
 SECTIONS = ["summary","experience","work experience","projects","education","skills","certifications","achievements"]
 
 def ats_score(resume, jd, kw_list):
     resume_l = resume.lower()
     jd_l = jd.lower()
-    # Coverage (0-40): proportion of JD keywords present in resume
     jd_kw = [k for k in kw_list if k in jd_l]
     have = [k for k in jd_kw if k in resume_l]
     coverage = 0 if not jd_kw else int(40 * len(have) / max(1, len(jd_kw)))
-
-    # Structure (0-25): presence of key sections
     present = sum(1 for s in SECTIONS if s in resume_l)
     structure = min(25, present * 5)
-
-    # Action verbs & metrics (0-20)
-    verbs = sum(1 for v in ACTION_VERBS if re.search(rf"{re.escape(v)}", resume_l))
-    numbers = len(re.findall(r"\d+(?:\.\d+)?%?", resume))
+    verbs = sum(1 for v in ACTION_VERBS if re.search(rf"\b{re.escape(v)}\b", resume_l))
+    numbers = len(re.findall(r"\b\d+(?:\.\d+)?%?\b", resume))
     impact = min(12, verbs * 2) + min(8, numbers // 3 * 2)
-
-    # Formatting heuristics (0-15): bullets, length within range, no huge paragraphs
-    bullets = len(re.findall(r"^[\-\•\*]", resume, flags=re.M))
+    bullets = len(re.findall(r"^[\-•\*]", resume, flags=re.M))
     words = len(re.findall(r"\w+", resume))
-    long_para = max((len(p) for p in resume.split("
-
-")), default=0)
+    long_para = max((len(p) for p in resume.split("\n\n")), default=0)
     formatting = 0
     if 300 <= words <= 1200: formatting += 6
     if bullets >= 5: formatting += 6
     if long_para < 1200: formatting += 3
-
     total = min(100, coverage + structure + impact + formatting)
     breakdown = {"coverage": coverage, "structure": structure, "impact": impact, "formatting": formatting}
     return total, breakdown, have, [k for k in jd_kw if k not in have]
 
 def heuristic_coach(user_msg, resume, jd, have, miss, breakdown):
     tips = []
-    if miss:
-        tips.append(f"Add relevant keywords naturally: **{', '.join(sorted(set(miss))[:10])}**.")
-    if breakdown["impact"] < 14:
-        tips.append("Strengthen bullet points with **action verbs** and **numbers** (e.g., *reduced latency by 30%*).")
-    if breakdown["structure"] < 20:
-        tips.append("Ensure clear sections: **Summary, Skills, Experience, Projects, Education, Certifications**.")
-    if breakdown["formatting"] < 12:
-        tips.append("Use concise bullets (8–16 words), consistent tense, and avoid giant paragraphs.")
-    if "intern" in jd.lower() and "intern" not in resume.lower():
-        tips.append("Include **internship**-like project experience with outcomes.")
-    if not tips:
-        tips = ["Looking solid. Consider a one-line **impact summary** at the top and tailor 3–5 bullets to the JD."]
-    reply = f"**Suggestions:**
-- " + "
-- ".join(tips) + "
+    if miss: tips.append(f"Add relevant keywords naturally: **{', '.join(sorted(set(miss))[:10])}**.")
+    if breakdown["impact"] < 14: tips.append("Strengthen bullets with **action verbs** + **numbers** (e.g., *reduced latency by 30%*).")
+    if breakdown["structure"] < 20: tips.append("Ensure clear sections: **Summary, Skills, Experience, Projects, Education, Certifications**.")
+    if breakdown["formatting"] < 12: tips.append("Use concise bullets (8–16 words), consistent tense, avoid giant paragraphs.")
+    if 'intern' in jd.lower() and 'intern' not in resume.lower(): tips.append("Include **internship/project** experience with measurable outcomes.")
+    if not tips: tips = ["Looking solid. Add a one-line **impact summary** at the top and tailor 3–5 bullets to the JD."]
+    return "**Suggestions:**\n- " + "\n- ".join(tips) + "\n\n**What to try next:** Paste a bullet you're unsure about; I'll make it punchier."
 
-**What to try next:** Paste a bullet you're unsure about; I'll make it punchier."
-    return reply
-
-# ---------------- Inference & UI ----------------
 if go:
     if not resume_text or not jd_text:
         st.error("Please provide both Resume and Job Description (paste or upload for each).")
@@ -217,7 +178,6 @@ if go:
     model = load_model()
     r_txt, j_txt = clean(resume_text), clean(jd_text)
 
-    # Optional auto JD terms
     auto_terms = []
     if auto_kw:
         try:
@@ -228,7 +188,6 @@ if go:
         except Exception:
             pass
 
-    # Embedding similarity (overall + evidence)
     R, J = embed(model, [r_txt, j_txt])
     overall = cos_sim(R, J)
 
@@ -249,17 +208,14 @@ if go:
     pairs = sorted(pairs, key=lambda x: -x[2])[:top_k]
     df = pd.DataFrame(pairs, columns=["JD Sentence", "Resume Sentence", "Similarity"])
 
-    # Keywords (manual + auto)
     manual_kw = [k.strip().lower() for k in kw_text.split(",") if k.strip()]
     kw_list = sorted(set(manual_kw + auto_terms))
     r_low, j_low = r_txt.lower(), j_txt.lower()
     have = [k for k in kw_list if k in r_low]
     miss = [k for k in kw_list if (k in j_low and k not in r_low)]
 
-    # ATS score
     ats, breakdown, have_jd, miss_jd = ats_score(r_txt, j_txt, kw_list)
 
-    # KPI
     k1, k2, k3 = st.columns([1, 1, 2])
     with k1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -365,12 +321,9 @@ if go:
                     openai.api_key = api_key
                     prompt = (
                         "You are a resume coach. Improve bullets with numbers and action verbs; "
-                        "suggest keyword insertions. Keep answers concise with examples.
-"
-                        f"Context JSON: {json.dumps(context)}
-"
-                        f"User: {user_msg}
-"
+                        "suggest keyword insertions. Keep answers concise with examples.\n"
+                        f"Context JSON: {json.dumps(context)}\n"
+                        f"User: {user_msg}\n"
                         "Assistant:"
                     )
                     try:
@@ -396,5 +349,4 @@ if go:
             with st.chat_message("assistant"):
                 st.write(reply)
 
-# Footer
 st.markdown('<div class="footer">Built by <a href="https://github.com/subashchakravarthy" target="_blank">Subash Chakravarthy</a> · © 2025</div>', unsafe_allow_html=True)
