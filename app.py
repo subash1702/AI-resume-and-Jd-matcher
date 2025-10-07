@@ -1,3 +1,4 @@
+
 import io, re, regex, json, numpy as np, pandas as pd
 import streamlit as st
 from sentence_transformers import SentenceTransformer
@@ -6,6 +7,7 @@ from docx import Document
 
 st.set_page_config(page_title="MatchMyResume — AI JD Matcher + Coach", page_icon="🤖", layout="wide")
 
+# ---------- CSS ----------
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@700&family=Inter:wght@400;600;800&display=swap');
@@ -39,6 +41,7 @@ html, body, [class*="css"] { font-family: Inter, system-ui, -apple-system, Segoe
 </style>
 """, unsafe_allow_html=True)
 
+# ---------- Header ----------
 st.markdown("""
 <div class="hero" role="banner" aria-label="App header">
   <div class="brand">
@@ -52,6 +55,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# ---------- Helpers ----------
 @st.cache_resource(show_spinner=True)
 def load_model():
     return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
@@ -80,31 +84,11 @@ def read_any(uploaded_file) -> str:
         return "\n".join(p.text for p in doc.paragraphs)
     return data.decode("utf-8", errors="ignore")
 
+# ---------- Sidebar ----------
 with st.sidebar:
     st.header("⚙️ Controls")
-    role_presets = {
-        "Data Analyst":"python, sql, tableau, power bi, excel, pandas, scikit-learn, statistics, dashboard, etl, data cleaning",
-        "Business Analyst":"requirements gathering, user stories, sql, excel, stakeholder management, process mapping, a/b testing",
-        "Data Engineer":"python, sql, pyspark, spark, airflow, dbt, kafka, snowflake, databricks, aws, azure, docker, ci/cd",
-        "ML Engineer":"python, pytorch, tensorflow, scikit-learn, mlflow, docker, kubernetes, deployment, monitoring",
-        "BI Analyst":"power bi, tableau, sql, dax, data modeling, storytelling, dashboards",
-        "Product Analyst":"sql, a/b testing, experiment design, product analytics, retention, funnels",
-        "Financial Analyst":"excel, vba, sql, forecasting, valuation, power bi, tableau",
-        "Marketing Analyst":"sql, attribution, google analytics, segmentation, tableau, power bi",
-        "Supply Chain Analyst":"sql, optimization, forecasting, inventory, logistics, tableau, power bi",
-        "Operations Analyst":"lean six sigma, process improvement, sql, kpis, dashboards",
-        "General":"communication, stakeholder management, reporting, presentation"
-    }
-    domain_presets = {
-        "General":"",
-        "Healthcare":"hipaa, hl7, claims, ehr, icd, patient outcomes",
-        "Finance":"risk, kyc, aml, credit scoring, portfolio, fraud detection",
-        "Retail":"pricing, promotions, assortment, demand forecasting, basket analysis",
-        "Supply Chain":"route optimization, warehouse, delivery, inventory",
-        "Education":"student retention, lms, assessment, analytics",
-        "Energy":"load forecasting, renewable, grid, maintenance",
-        "Cybersecurity":"siem, detection, alerts, threat intel, phishing",
-    }
+    role_presets = {"Data Analyst":"python, sql, tableau, power bi, excel, pandas, scikit-learn, statistics, dashboard, etl, data cleaning","General":"communication, stakeholder management, reporting, presentation"}
+    domain_presets = {"General":"", "Finance":"risk, kyc, aml, credit scoring, portfolio, fraud detection"}
     role = st.selectbox("Profile (role)", list(role_presets.keys()), index=0)
     domain = st.selectbox("Domain (industry)", list(domain_presets.keys()), index=0)
     base_kw = ", ".join([x for x in [role_presets[role], domain_presets[domain]] if x])
@@ -112,6 +96,7 @@ with st.sidebar:
     auto_kw = st.checkbox("Auto-extract top JD terms (adds 1–2 grams)", value=True)
     top_k = st.slider("Top evidence pairs", 3, 20, 10)
 
+# ---------- Inputs ----------
 st.subheader("Input (paste takes priority over upload)")
 
 def get_text_source(title, upload_help, up_key, ta_key):
@@ -139,26 +124,21 @@ ACTION_VERBS = ["delivered","built","designed","launched","led","owned","scaled"
 SECTIONS = ["summary","experience","work experience","projects","education","skills","certifications","achievements"]
 
 def ats_score(resume, jd, kw_list):
-    resume_l = resume.lower()
-    jd_l = jd.lower()
-    jd_kw = [k for k in kw_list if k in jd_l]
-    have = [k for k in jd_kw if k in resume_l]
+    resume_l = resume.lower(); jd_l = jd.lower()
+    jd_kw = [k for k in kw_list if k in jd_l]; have = [k for k in jd_kw if k in resume_l]
     coverage = 0 if not jd_kw else int(40 * len(have) / max(1, len(jd_kw)))
-    present = sum(1 for s in SECTIONS if s in resume_l)
-    structure = min(25, present * 5)
+    present = sum(1 for s in SECTIONS if s in resume_l); structure = min(25, present * 5)
     verbs = sum(1 for v in ACTION_VERBS if re.search(rf"\b{re.escape(v)}\b", resume_l))
     numbers = len(re.findall(r"\b\d+(?:\.\d+)?%?\b", resume))
     impact = min(12, verbs * 2) + min(8, numbers // 3 * 2)
     bullets = len(re.findall(r"^[\-•\*]", resume, flags=re.M))
-    words = len(re.findall(r"\w+", resume))
-    long_para = max((len(p) for p in resume.split("\n\n")), default=0)
+    words = len(re.findall(r"\w+", resume)); long_para = max((len(p) for p in resume.split("\n\n")), default=0)
     formatting = 0
     if 300 <= words <= 1200: formatting += 6
     if bullets >= 5: formatting += 6
     if long_para < 1200: formatting += 3
     total = min(100, coverage + structure + impact + formatting)
-    breakdown = {"coverage": coverage, "structure": structure, "impact": impact, "formatting": formatting}
-    return total, breakdown, have, [k for k in jd_kw if k not in have]
+    return total, {"coverage": coverage, "structure": structure, "impact": impact, "formatting": formatting}, have, [k for k in jd_kw if k not in have]
 
 def heuristic_coach(user_msg, resume, jd, have, miss, breakdown):
     tips = []
@@ -172,8 +152,7 @@ def heuristic_coach(user_msg, resume, jd, have, miss, breakdown):
 
 if go:
     if not resume_text or not jd_text:
-        st.error("Please provide both Resume and Job Description (paste or upload for each).")
-        st.stop()
+        st.error("Please provide both Resume and Job Description (paste or upload for each)."); st.stop()
 
     model = load_model()
     r_txt, j_txt = clean(resume_text), clean(jd_text)
@@ -185,61 +164,47 @@ if go:
             vec = CountVectorizer(stop_words="english", ngram_range=(1,2), max_features=40)
             _ = vec.fit_transform([j_txt])
             auto_terms = [t.lower() for t in vec.get_feature_names_out() if len(t) > 2]
-        except Exception:
-            pass
+        except Exception: pass
 
-    R, J = embed(model, [r_txt, j_txt])
-    overall = cos_sim(R, J)
+    R, J = embed(model, [r_txt, j_txt]); overall = cos_sim(R, J)
+    jd_sents = split_sentences(j_txt); r_sents  = split_sentences(r_txt)
+    if not jd_sents or not r_sents: st.warning("One of the texts has no extractable sentences."); st.stop()
 
-    jd_sents = split_sentences(j_txt)
-    r_sents  = split_sentences(r_txt)
-    if not jd_sents or not r_sents:
-        st.warning("One of the texts has no extractable sentences.")
-        st.stop()
-
-    E_jd = embed(model, jd_sents)
-    E_r  = embed(model, r_sents)
+    E_jd = embed(model, jd_sents); E_r  = embed(model, r_sents)
     sims = np.matmul(E_jd, E_r.T)
 
     pairs = []
     for i, row in enumerate(sims):
-        j_best = int(np.argmax(row))
-        pairs.append((jd_sents[i], r_sents[j_best], float(row[j_best])))
+        j_best = int(np.argmax(row)); pairs.append((jd_sents[i], r_sents[j_best], float(row[j_best])))
     pairs = sorted(pairs, key=lambda x: -x[2])[:top_k]
     df = pd.DataFrame(pairs, columns=["JD Sentence", "Resume Sentence", "Similarity"])
 
     manual_kw = [k.strip().lower() for k in kw_text.split(",") if k.strip()]
     kw_list = sorted(set(manual_kw + auto_terms))
     r_low, j_low = r_txt.lower(), j_txt.lower()
-    have = [k for k in kw_list if k in r_low]
-    miss = [k for k in kw_list if (k in j_low and k not in r_low)]
-
+    have = [k for k in kw_list if k in r_low]; miss = [k for k in kw_list if (k in j_low and k not in r_low)]
     ats, breakdown, have_jd, miss_jd = ats_score(r_txt, j_txt, kw_list)
 
     k1, k2, k3 = st.columns([1, 1, 2])
     with k1:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.caption("Overall Fit (cosine)")
+        st.markdown('<div class="card">', unsafe_allow_html=True); st.caption("Overall Fit (cosine)")
         st.markdown(f'<div class="kpi-big">{overall:.3f}</div>', unsafe_allow_html=True)
         pct = max(min((overall - 0.5) / 0.5, 1), 0) * 100
         st.markdown(f'<div class="progress-outer"><div class="progress-inner" style="width:{pct:.0f}%"></div></div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     with k2:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.caption("ATS Score (0–100)")
+        st.markdown('<div class="card">', unsafe_allow_html=True); st.caption("ATS Score (0–100)")
         st.markdown(f'<div class="kpi-big">{ats}</div>', unsafe_allow_html=True)
         st.write(f"Coverage {breakdown['coverage']}, Structure {breakdown['structure']}, Impact {breakdown['impact']}, Formatting {breakdown['formatting']}")
         st.markdown('</div>', unsafe_allow_html=True)
     with k3:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.caption("Quick Tips")
+        st.markdown('<div class="card">', unsafe_allow_html=True); st.caption("Quick Tips")
         st.write("• Aim for **0.75+** fit and **70+** ATS for stronger shortlisting")
         st.write("• Add missing but truthful keywords; quantify impact with numbers")
         st.write("• Keep sections clean: Summary, Skills, Experience, Projects, Education")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    st.write("")
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["✅ Skills", "🔍 Evidence", "🧾 Raw Text", "⬇️ Export", "🤖 Coach"])
+    st.write(""); tab1, tab2, tab3, tab4, tab5 = st.tabs(["✅ Skills", "🔍 Evidence", "🧾 Raw Text", "⬇️ Export", "🤖 Coach"])
 
     with tab1:
         c1, c2 = st.columns(2)
@@ -247,106 +212,78 @@ if go:
             st.subheader("Found in Resume")
             if have:
                 st.markdown('<div class="chips">' + " ".join([f"<span>{h}</span>" for h in sorted(set(have))]) + "</div>", unsafe_allow_html=True)
-            else:
-                st.write("—")
+            else: st.write("—")
         with c2:
             st.subheader("Missing but in JD")
             if miss:
                 st.markdown('<div class="chips">' + " ".join([f"<span>{m}</span>" for m in sorted(set(miss))]) + "</div>", unsafe_allow_html=True)
-            else:
-                st.write("—")
-        st.markdown("")
+            else: st.write("—")
         st.text_area("Copy missing keywords", value=", ".join(sorted(set(miss))), height=80)
 
     with tab2:
         st.subheader("Top JD ↔ Resume Matches")
-        def _shade(v):
-            a=max(min((v-0.6)/0.35,1),0)
-            return f"background-color: rgba(124,58,237,{a:.18});"
-        styled = df.style.format({"Similarity":"{:.3f}"}).applymap(_shade, subset=["Similarity"])
-        st.dataframe(styled, use_container_width=True)
+        df_safe = df.copy(); df_safe["Similarity"] = df_safe["Similarity"].astype(float).round(3)
+        def bucket(v):
+            if v >= 0.85: return "🔥 Strong"
+            if v >= 0.75: return "✅ Good"
+            if v >= 0.65: return "🟡 Fair"
+            return "⚪ Weak"
+        df_safe["Strength"] = df_safe["Similarity"].apply(bucket)
+        st.dataframe(df_safe[["Strength","Similarity","JD Sentence","Resume Sentence"]], use_container_width=True, hide_index=True)
 
     with tab3:
         st.subheader("Extracted Texts")
-        st.text_area("Resume", r_txt, height=200)
-        st.text_area("Job Description", j_txt, height=200)
+        safe_r = (r_txt or "").strip(); safe_j = (j_txt or "").strip()
+        MAX_CHARS = 120_000
+        if len(safe_r) > MAX_CHARS: st.info("Resume text is long – showing a trimmed preview.")
+        if len(safe_j) > MAX_CHARS: st.info("JD text is long – showing a trimmed preview.")
+        st.text_area("Resume", safe_r[:MAX_CHARS], height=220, key="raw_resume")
+        st.text_area("Job Description", safe_j[:MAX_CHARS], height=220, key="raw_jd")
 
     with tab4:
         st.subheader("Download results")
         out = df.copy()
+        out["Similarity"] = out["Similarity"].astype(float).round(3)
         out["Have Keywords"] = ", ".join(sorted(set(have)))
         out["Missing Keywords"] = ", ".join(sorted(set(miss)))
-        csv = out.to_csv(index=False).encode("utf-8")
-        st.download_button("Download CSV", csv, file_name="match_results.csv", mime="text/csv")
-
-        report = {
-            "overall_fit": round(overall, 3),
-            "ats": ats,
-            "ats_breakdown": breakdown,
-            "profile": role,
-            "domain": domain,
-            "keywords_used": kw_list,
-            "have": sorted(set(have)),
-            "missing": sorted(set(miss)),
-            "evidence": [{"jd": r["JD Sentence"], "resume": r["Resume Sentence"], "sim": round(float(r["Similarity"]),3)} for _, r in out.iterrows()]
-        }
-        json_bytes = json.dumps(report, indent=2).encode("utf-8")
-        st.download_button("Download JSON", json_bytes, file_name="match_report.json", mime="application/json")
+        csv_bytes = out.to_csv(index=False).encode("utf-8")
+        st.download_button("⬇️ Download CSV", csv_bytes, file_name="match_results.csv", mime="text/csv")
+        evidence_records = [{"jd": str(r["JD Sentence"]), "resume": str(r["Resume Sentence"]), "sim": float(r["Similarity"])} for _, r in out.iterrows()]
+        report = {"overall_fit": float(round(overall,3)), "ats": int(ats), "ats_breakdown": {k:int(v) for k,v in breakdown.items()},
+                  "profile": str(role), "domain": str(domain), "keywords_used": list(map(str, kw_list)),
+                  "have": sorted(set(map(str, have))), "missing": sorted(set(map(str, miss))), "evidence": evidence_records}
+        json_bytes = json.dumps(report, ensure_ascii=False, indent=2).encode("utf-8")
+        st.download_button("⬇️ Download JSON", json_bytes, file_name="match_report.json", mime="application/json")
 
     with tab5:
-        st.subheader("Resume Coach")
-        st.caption("Ask how to tailor your resume. Paste any bullet; I'll make it stronger.")
-
-        if "chat" not in st.session_state:
-            st.session_state.chat = []
-
-        context = {"profile": role, "domain": domain, "missing": miss, "have": have, "ats": ats, "ats_breakdown": breakdown}
+        st.subheader("Resume Coach"); st.caption("Ask how to tailor your resume. Paste any bullet; I’ll make it stronger.")
+        if "chat" not in st.session_state or not isinstance(st.session_state["chat"], list): st.session_state["chat"] = []
+        context = {"profile": str(role), "domain": str(domain), "missing": sorted(set(map(str, miss))),
+                   "have": sorted(set(map(str, have))), "ats": int(ats), "ats_breakdown": {k:int(v) for k,v in breakdown.items()}}
         if len(st.session_state.chat) == 0:
-            intro = f"Hi! I'm your resume coach. Your current ATS is **{ats}/100**. Ask me anything or paste a bullet for edits."
-            st.session_state.chat.append(("assistant", intro))
-
+            st.session_state.chat.append(("assistant", f"Hi! I'm your resume coach. Your current ATS is **{ats}/100**. Ask me anything or paste a bullet for edits."))
         for role_, msg in st.session_state.chat:
-            with st.chat_message(role_):
-                st.write(msg)
-
+            with st.chat_message(role_): st.write(msg)
         user_msg = st.chat_input("Type your question or paste a bullet…")
         if user_msg:
             st.session_state.chat.append(("user", user_msg))
-
-            reply = None
-            api_key = st.secrets.get("OPENAI_API_KEY")
+            reply = None; api_key = st.secrets.get("OPENAI_API_KEY", None)
             if api_key:
                 try:
-                    import openai
-                    openai.api_key = api_key
-                    prompt = (
-                        "You are a resume coach. Improve bullets with numbers and action verbs; "
-                        "suggest keyword insertions. Keep answers concise with examples.\n"
-                        f"Context JSON: {json.dumps(context)}\n"
-                        f"User: {user_msg}\n"
-                        "Assistant:"
-                    )
+                    import openai; openai.api_key = api_key
+                    prompt = ("You are a resume coach. Improve bullets with numbers and action verbs; suggest keyword insertions. Keep answers concise with examples.\n"
+                              f"Context JSON: {json.dumps(context)}\nUser: {user_msg}\nAssistant:")
                     try:
-                        resp = openai.ChatCompletion.create(
-                            model="gpt-3.5-turbo",
-                            messages=[{"role":"system","content":"Resume coach."},
-                                      {"role":"user","content": prompt}],
-                            max_tokens=300, temperature=0.4
-                        )
+                        resp = openai.ChatCompletion.create(model="gpt-3.5-turbo",
+                            messages=[{"role":"system","content":"Resume coach."},{"role":"user","content":prompt}],
+                            max_tokens=300, temperature=0.4)
                         reply = resp.choices[0].message["content"].strip()
                     except Exception:
-                        resp = openai.Completion.create(
-                            model="text-davinci-003", prompt=prompt, max_tokens=300, temperature=0.4
-                        )
+                        resp = openai.Completion.create(model="text-davinci-003", prompt=prompt, max_tokens=300, temperature=0.4)
                         reply = resp.choices[0].text.strip()
-                except Exception:
-                    reply = None
-
-            if not reply:
-                reply = heuristic_coach(user_msg, r_txt, j_txt, have, miss, breakdown)
-
+                except Exception: reply = None
+            if not reply: reply = heuristic_coach(user_msg, r_txt, j_txt, have, miss, breakdown)
             st.session_state.chat.append(("assistant", reply))
-            with st.chat_message("assistant"):
-                st.write(reply)
+            with st.chat_message("assistant"): st.write(reply)
 
 st.markdown('<div class="footer">Built by <a href="https://github.com/subashchakravarthy" target="_blank">Subash Chakravarthy</a> · © 2025</div>', unsafe_allow_html=True)
