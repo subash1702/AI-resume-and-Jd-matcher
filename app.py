@@ -420,4 +420,4 @@ if data:
             with st.chat_message("assistant"): st.write(reply)
 
 # ========================= Footer =========================
-st.markdown('<div class="footer">Built by <a href="https://github.com/subashchakravarthy" target="_blank">Subash Chakravarthy</a> · © 2025</div>', unsafe_allow_html=True)
+st.markdown('<div class="footer">Built by <a href="https://github.com/subash1702" target="_blank">Subash Chakravarthy</a> · © 2025</div>', unsafe_allow_html=True)
